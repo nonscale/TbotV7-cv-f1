@@ -1,0 +1,27 @@
+.palette {
+  background-color: #333740; padding: 1rem; border-radius: 8px;
+  margin-bottom: 1.5rem; border: 1px solid #4a4e58;
+}
+.palette h3 {
+  margin-top: 0; margin-bottom: 1rem; color: #c5c8d2;
+  font-size: 1.2em; text-align: left;
+}
+.palette-items { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.palette-item {
+  padding: 0.5em 1em; font-size: 0.9em; border-radius: 20px;
+  border: 1px solid transparent; cursor: pointer; transition: all 0.2s ease-in-out;
+  font-weight: 500;
+}
+.palette-item:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); }
+.item-type-data { background-color: #2e7d32; color: white; border-color: #388e3c; }
+.item-type-data:hover { background-color: #388e3c; }
+.item-type-operator { background-color: #d32f2f; color: white; border-color: #e53935; }
+.item-type-operator:hover { background-color: #e53935; }
+.item-type-number { background-color: #1976d2; color: white; border-color: #1e88e5; }
+.item-type-number:hover { background-color: #1e88e5; }
+.item-type-indicator { background-color: #f57f17; color: white; border-color: #fbc02d; }
+.item-type-indicator:hover { background-color: #fbc02d; }
+.item-type-variable { background-color: #7b1fa2; color: white; border-color: #8e24aa; }
+.item-type-variable:hover { background-color: #8e24aa; }
+.item-type-function { background-color: #00796b; color: white; border-color: #00897b; }
+.item-type-function:hover { background-color: #00897b; }

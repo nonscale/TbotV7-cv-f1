@@ -1,0 +1,57 @@
+.strategy-builder-page {
+  width: 100%;
+  max-width: 1200px; /* Limit max width for better layout on large screens */
+  margin: 0 auto;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+h2, h3 {
+  color: #e2e2e2;
+  border-bottom: 1px solid #444;
+  padding-bottom: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+.canvases-container {
+  display: flex;
+  gap: 2rem;
+  margin-top: 1.5rem;
+  justify-content: space-between;
+}
+
+.canvas-wrapper {
+  flex: 1;
+  background-color: #2a2a2e;
+  border-radius: 8px;
+  padding: 1rem;
+  min-height: 250px; /* Ensure a minimum height for the canvas area */
+  border: 1px solid #3a3a3f;
+}
+
+.scan-controls {
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.scan-controls button {
+  padding: 0.8em 2em;
+  font-size: 1.1em;
+  font-weight: bold;
+  background-color: #646cff;
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.3s, opacity 0.3s;
+}
+
+.scan-controls button:hover {
+  background-color: #535bf2;
+}
+
+.scan-controls button:disabled {
+  background-color: #494e80;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
