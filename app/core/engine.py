@@ -3,22 +3,18 @@ import operator
 import logging
 from typing import Dict, Any, List, Callable
 
-# 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ... (LogicParser 클래스는 변경 없음) ...
 class LogicParser:
-    """
-    Shunting-yard 알고리즘을 사용하여 복잡한 논리 및 산술 표현식을 파싱하고 평가합니다.
-    데이터프레임 컨텍스트 내에서 Polars Expression을 생성하고 실행합니다.
-    """
+    # ... (기존 LogicParser 코드는 변경 없음) ...
     def __init__(self, indicators: Dict[str, Callable], data: pl.DataFrame):
         self.indicators = indicators
         self.data = data
         self.variables: Dict[str, Any] = {}
 
     def _parse_tokens(self, expression: str) -> List[str]:
+        # 간단한 공백 기반 토크나이저
         return expression.split()
 
     def _shunting_yard(self, tokens: List[str]) -> List[Any]:
@@ -91,11 +87,11 @@ class LogicParser:
         if len(stack) != 1: raise ValueError("Invalid expression")
         return stack[0]
 
-    def evaluate(self, expression: str) -> pl.Series:
+    def evaluate_on_df(self, expression: str) -> pl.Series:
         tokens = self._parse_tokens(expression)
         rpn_queue = self._shunting_yard(tokens)
         final_expr = self._evaluate_rpn(rpn_queue)
-        return self.data.with_columns(result=final_expr).get_column("result")
+        return self.data.select(final_expr).to_series()
 
     def set_variable(self, var_name: str, expression: str):
         tokens = self._parse_tokens(expression)
@@ -106,64 +102,89 @@ class LogicParser:
 
 class ScanEngine:
     """
-    정의된 전략에 따라 여러 티커에 대해 스캔을 수행하는 엔진.
+    PRD v7.3의 '2단계 스캔' 아키텍처를 구현한 스캔 엔진.
     """
     def __init__(self, broker, indicators: Dict[str, Callable]):
         self.broker = broker
         self.indicators = indicators
 
-    async def _fetch_data(self, ticker: str, timeframe: str, limit: int) -> pl.DataFrame:
+    async def run_1st_scan(self, scan_logic: Dict[str, Any], tickers: List[str]) -> List[str]:
         """
-        브로커를 통해 단일 티커의 OHLCV 데이터를 가져옵니다.
+        1차 스캔: 현재 시점 데이터만으로 빠르게 종목을 필터링합니다.
         """
-        logger.info(f"{ticker}의 {timeframe} 데이터 로딩 중 (최근 {limit}개)")
-        df = await self.broker.get_ohlcv(ticker, timeframe, limit)
-        return df
+        first_scan_conditions = scan_logic.get("1st_scan")
+        if not first_scan_conditions:
+            logger.info("1차 스캔 조건이 없습니다. 모든 종목을 2차 스캔 대상으로 합니다.")
+            return tickers
 
-    async def run_scan(self, scan_logic: Dict[str, Any], tickers: List[str]) -> pl.DataFrame:
+        logger.info(f"1차 스캔 시작: {len(tickers)}개 종목 대상")
+        market_data = await self.broker.get_market_data_for_1st_scan(tickers)
+
+        if market_data.is_empty():
+            logger.warning("1차 스캔을 위한 시장 데이터를 가져오지 못했습니다.")
+            return []
+
+        # 1차 스캔은 보조지표를 사용하지 않으므로, 빈 indicator 딕셔너리로 파서 초기화
+        parser = LogicParser({}, market_data)
+
+        # 'condition' 키에 전체 조건이 문자열로 들어옴
+        condition_str = first_scan_conditions['condition']
+
+        filtered_df = market_data.filter(parser.evaluate_on_df(condition_str))
+
+        if filtered_df.is_empty():
+            logger.info("1차 스캔 결과, 조건을 만족하는 종목이 없습니다.")
+            return []
+
+        passed_tickers = filtered_df["ticker"].to_list()
+        logger.info(f"1차 스캔 통과: {len(passed_tickers)}개 종목")
+        return passed_tickers
+
+    async def run_2nd_scan(self, scan_logic: Dict[str, Any], tickers: List[str]) -> pl.DataFrame:
         """
-        주어진 전략 로직에 따라 여러 티커에 대해 스캔을 실행합니다.
-        조건을 만족하는 각 티커의 '최신' 데이터 행을 수집하여 반환합니다.
+        2차 스캔: 시계열 데이터를 사용하여 정밀하게 종목을 분석합니다.
         """
-        logger.info(f"'{scan_logic.get('name', 'Untitled')}' 전략으로 {len(tickers)}개 종목 스캔 시작")
-        
+        second_scan_conditions = scan_logic.get("2nd_scan")
+        if not second_scan_conditions:
+            logger.warning("2차 스캔 조건이 없어 스캔을 종료합니다.")
+            return pl.DataFrame()
+
+        logger.info(f"2차 스캔 시작: {len(tickers)}개 종목 대상")
         all_results = []
-        timeframe = scan_logic.get("timeframe", "day")
+        timeframe = second_scan_conditions.get("timeframe", "day")
         
         for ticker in tickers:
             try:
-                ohlcv_df = await self._fetch_data(ticker, timeframe, 200)
+                # 2차 스캔은 과거 데이터가 필요
+                ohlcv_df = await self.broker.get_ohlcv(ticker, timeframe, limit=200)
 
                 if ohlcv_df.is_empty():
-                    logger.debug(f"{ticker}: 데이터를 가져오지 못해 건너뜁니다.")
+                    logger.debug(f"{ticker}: 2차 스캔 데이터를 가져오지 못해 건너뜁니다.")
                     continue
 
                 parser = LogicParser(self.indicators, ohlcv_df)
 
-                if 'variables' in scan_logic:
-                    for var in scan_logic['variables']:
+                if 'variables' in second_scan_conditions:
+                    for var in second_scan_conditions['variables']:
                         parser.set_variable(var['name'], var['expression'])
 
-                final_condition = scan_logic['condition']
-                mask = parser.evaluate(final_condition)
+                final_condition = second_scan_conditions['condition']
+                mask = parser.evaluate_on_df(final_condition)
 
-                # 마스크의 마지막 값이 True인지 확인 (가장 최신 데이터가 조건을 만족하는지)
-                if mask.is_empty() or not mask[-1]:
+                if mask.is_empty() or not mask.tail(1)[0]:
                     continue
 
-                # 조건을 만족한 경우, 해당 티커의 최신 데이터 행을 결과에 추가
                 latest_data = ohlcv_df.tail(1).with_columns(pl.lit(ticker).alias("ticker"))
                 all_results.append(latest_data)
-                logger.info(f"조건 만족 종목 발견: {ticker}")
+                logger.info(f"2차 스캔 조건 만족: {ticker}")
 
             except Exception as e:
-                logger.error(f"{ticker} 스캔 중 오류 발생: {e}", exc_info=False)
-                continue # 한 티커에서 오류 발생 시 다음 티커로 계속 진행
+                logger.error(f"{ticker} 2차 스캔 중 오류: {e}", exc_info=False)
+                continue
 
         if not all_results:
             return pl.DataFrame()
 
-        # 모든 결과를 하나의 DataFrame으로 결합
         final_df = pl.concat(all_results)
-        logger.info(f"스캔 완료. 총 {len(final_df)}개의 결과 발견.")
+        logger.info(f"2차 스캔 완료. 최종 {len(final_df)}개 결과 발견.")
         return final_df

@@ -15,6 +15,8 @@ def create_strategy(db: Session, strategy: StrategyCreate) -> Strategy:
     """새로운 전략을 생성합니다."""
     db_strategy = Strategy(
         name=strategy.name,
+        broker=strategy.broker,  # 'broker' 필드 추가
+        market=strategy.market,  # 'market' 필드 추가
         description=strategy.description,
         scan_logic=strategy.scan_logic,
         is_active=strategy.is_active,
@@ -29,7 +31,8 @@ def update_strategy(db: Session, strategy_id: int, strategy_update: StrategyUpda
     """기존 전략을 수정합니다."""
     db_strategy = get_strategy(db, strategy_id)
     if db_strategy:
-        update_data = strategy_update.dict(exclude_unset=True)
+        # Pydantic V2에 맞게 .dict()를 .model_dump()로 변경
+        update_data = strategy_update.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             setattr(db_strategy, key, value)
         db.commit()

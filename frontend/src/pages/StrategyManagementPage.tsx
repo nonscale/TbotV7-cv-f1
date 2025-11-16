@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Strategy } from '../types';
 
@@ -10,8 +10,12 @@ const apiClient = axios.create({
   },
 });
 
+// WebSocket을 위한 URL
+const WS_URL = 'ws://localhost:8000/ws/v1/updates';
+
 const StrategyManagementPage: React.FC = () => {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [watchlistCounts, setWatchlistCounts] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [notification, setNotification] = useState<string>('');
@@ -20,8 +24,12 @@ const StrategyManagementPage: React.FC = () => {
   const [newStrategyName, setNewStrategyName] = useState('');
   const [newStrategyDescription, setNewStrategyDescription] = useState('');
 
-  // 전략 목록을 가져오는 함수
-  const fetchStrategies = async () => {
+  const showNotification = (message: string, duration: number = 3000) => {
+    setNotification(message);
+    setTimeout(() => setNotification(''), duration);
+  };
+
+  const fetchStrategies = useCallback(async () => {
     setLoading(true);
     try {
       const response = await apiClient.get('/strategies');
@@ -33,14 +41,45 @@ const StrategyManagementPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  // 컴포넌트 마운트 시 전략 목록 가져오기
-  useEffect(() => {
-    fetchStrategies();
   }, []);
 
-  // 새 전략 생성 핸들러
+  useEffect(() => {
+    fetchStrategies();
+
+    const ws = new WebSocket(WS_URL);
+    ws.onopen = () => {
+      console.log('WebSocket connection established');
+      showNotification('Real-time connection established.', 2000);
+    };
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      console.log('WebSocket message received:', message);
+
+      if (message.event === 'watchlist_updated') {
+        const { strategy_name, count } = message.payload;
+        const targetStrategy = strategies.find(s => s.name === strategy_name);
+        if (targetStrategy) {
+          setWatchlistCounts(prev => ({ ...prev, [targetStrategy.id]: count }));
+          showNotification(`'${strategy_name}' watchlist updated: ${count} items found.`);
+        }
+      } else if (message.event === 'scan_result_found') {
+        const { strategy_name, results } = message.payload;
+        showNotification(`'${strategy_name}' found ${results.length} results from 2nd scan!`);
+      }
+    };
+    ws.onclose = () => {
+      console.log('WebSocket connection closed');
+    };
+    ws.onerror = (err) => {
+      console.error('WebSocket error:', err);
+      setError('WebSocket connection failed.');
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [fetchStrategies, strategies]);
+
   const handleCreateStrategy = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStrategyName.trim()) {
@@ -51,21 +90,15 @@ const StrategyManagementPage: React.FC = () => {
       const newStrategy = {
         name: newStrategyName,
         description: newStrategyDescription,
-        scan_logic: { // 실제 scan_logic은 Strategy Builder에서 정의해야 합니다.
-            "name": newStrategyName,
-            "timeframe": "day",
-            "variables": [
-                {"name": "ma_short", "expression": "ma(5)"},
-                {"name": "ma_long", "expression": "ma(20)"}
-            ],
-            "condition": "ma_short > ma_long"
-        },
+        broker: "upbit",
+        market: "KRW",
+        scan_logic: { "condition": "close > open" }, // Placeholder logic
         is_active: false,
       };
       await apiClient.post('/strategies', newStrategy);
       setNewStrategyName('');
       setNewStrategyDescription('');
-      fetchStrategies(); // 목록 새로고침
+      fetchStrategies();
       showNotification(`Strategy '${newStrategy.name}' created successfully.`);
     } catch (err) {
       setError('Failed to create strategy.');
@@ -73,12 +106,11 @@ const StrategyManagementPage: React.FC = () => {
     }
   };
 
-  // 전략 삭제 핸들러
   const handleDeleteStrategy = async (id: number) => {
     if (window.confirm('Are you sure you want to delete this strategy?')) {
       try {
         await apiClient.delete(`/strategies/${id}`);
-        fetchStrategies(); // 목록 새로고침
+        fetchStrategies();
         showNotification(`Strategy #${id} deleted.`);
       } catch (err) {
         setError('Failed to delete strategy.');
@@ -87,63 +119,94 @@ const StrategyManagementPage: React.FC = () => {
     }
   };
 
-  // 스캔 실행 핸들러
-  const handleRunScan = async (id: number) => {
+  const handleToggleActive = async (strategy: Strategy) => {
     try {
-      const response = await apiClient.post(`/scans/${id}/run`);
-      showNotification(`Scan for strategy #${id} started in the background.`);
+      const updatedStrategy = { ...strategy, is_active: !strategy.is_active };
+      await apiClient.put(`/strategies/${strategy.id}`, updatedStrategy);
+      fetchStrategies();
+      showNotification(`Strategy '${strategy.name}' status updated.`);
     } catch (err) {
-      setError(`Failed to start scan for strategy #${id}.`);
+      setError(`Failed to update strategy #${strategy.id}.`);
       console.error(err);
     }
   };
 
-  // 알림 메시지 표시 함수
-  const showNotification = (message: string) => {
-    setNotification(message);
-    setTimeout(() => setNotification(''), 3000); // 3초 후 사라짐
+  const handleRun1stScan = async (id: number) => {
+    try {
+      await apiClient.post(`/scans/${id}/run-1st`);
+      showNotification(`1st scan for strategy #${id} started.`);
+    } catch (err) {
+      setError(`Failed to start 1st scan for strategy #${id}.`);
+      console.error(err);
+    }
   };
 
+  const handleRun2ndScan = async (id: number) => {
+    try {
+      await apiClient.post(`/scans/${id}/run-2nd`);
+      showNotification(`2nd scan for strategy #${id} started.`);
+    } catch (err) {
+      const errorData = (err as any).response?.data?.detail;
+      const errorMessage = errorData || `Failed to start 2nd scan for strategy #${id}.`;
+      setError(errorMessage);
+      showNotification(errorMessage, 5000);
+      console.error(err);
+    }
+  };
 
-  if (loading) return <div>Loading...</div>;
-  if (error) return <div style={{ color: 'red' }}>ERROR: {error}</div>;
+  if (loading) return <div>Loading strategies...</div>;
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <h2>Strategy Management</h2>
+    <div style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2>Strategy Management</h2>
+        {notification && <div style={{ color: 'blue', background: '#e0e7ff', padding: '0.5rem 1rem', borderRadius: '5px' }}>{notification}</div>}
+      </header>
 
-      {notification && <div style={{ color: 'green', marginBottom: '1rem' }}>{notification}</div>}
+      {error && <div style={{ color: 'red', background: '#ffebee', padding: '0.5rem 1rem', borderRadius: '5px', marginBottom: '1rem' }}>ERROR: {error}</div>}
 
-      {/* ... (새 전략 생성 폼은 이전과 동일) ... */}
-      <div style={{ marginBottom: '2rem', padding: '1rem', border: '1px solid #ccc' }}>
+      <div style={{ marginBottom: '2rem', padding: '1rem', border: '1px solid #ccc', borderRadius: '5px' }}>
         <h3>Create New Strategy</h3>
-        <form onSubmit={handleCreateStrategy}>
-          <input type="text" placeholder="Strategy Name" value={newStrategyName} onChange={(e) => setNewStrategyName(e.target.value)} required style={{ marginRight: '1rem' }} />
-          <input type="text" placeholder="Description" value={newStrategyDescription} onChange={(e) => setNewStrategyDescription(e.target.value)} style={{ marginRight: '1rem' }} />
+        <form onSubmit={handleCreateStrategy} style={{ display: 'flex', gap: '1rem' }}>
+          <input type="text" placeholder="Strategy Name" value={newStrategyName} onChange={(e) => setNewStrategyName(e.target.value)} required />
+          <input type="text" placeholder="Description" value={newStrategyDescription} onChange={(e) => setNewStrategyDescription(e.target.value)} />
           <button type="submit">Save New Strategy</button>
         </form>
       </div>
 
       <h3>Existing Strategies</h3>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
         <thead>
-          <tr style={{ borderBottom: '1px solid #ccc' }}>
-            <th style={{ padding: '8px', textAlign: 'left' }}>ID</th>
-            <th style={{ padding: '8px', textAlign: 'left' }}>Name</th>
-            <th style={{ padding: '8px', textAlign: 'left' }}>Active</th>
-            <th style={{ padding: '8px', textAlign: 'left' }}>Actions</th>
+          <tr style={{ borderBottom: '2px solid #333', background: '#f4f4f4' }}>
+            <th style={{ padding: '12px', textAlign: 'left' }}>Active</th>
+            <th style={{ padding: '12px', textAlign: 'left' }}>Name</th>
+            <th style={{ padding: '12px', textAlign: 'left' }}>Broker</th>
+            <th style={{ padding: '12px', textAlign: 'left' }}>Market</th>
+            <th style={{ padding: '12px', textAlign: 'left' }}>Watchlist</th>
+            <th style={{ padding: '12px', textAlign: 'left' }}>Created At</th>
+            <th style={{ padding: '12px', textAlign: 'left' }}>Updated At</th>
+            <th style={{ padding: '12px', textAlign: 'center' }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {strategies.map((strategy) => (
             <tr key={strategy.id} style={{ borderBottom: '1px solid #eee' }}>
-              <td style={{ padding: '8px' }}>{strategy.id}</td>
-              <td style={{ padding: '8px' }}>{strategy.name}</td>
-              <td style={{ padding: '8px' }}>{strategy.is_active ? 'Yes' : 'No'}</td>
-              <td style={{ padding: '8px' }}>
-                <button onClick={() => handleRunScan(strategy.id)} style={{ marginRight: '8px' }}>Run Scan</button>
-                <button disabled style={{ marginRight: '8px' }}>Edit</button>
-                <button onClick={() => handleDeleteStrategy(strategy.id)}>Delete</button>
+              <td style={{ padding: '12px' }}>
+                <input type="checkbox" checked={strategy.is_active} onChange={() => handleToggleActive(strategy)} title="Toggle strategy activation"/>
+              </td>
+              <td style={{ padding: '12px', fontWeight: 'bold' }}>{strategy.name}</td>
+              <td style={{ padding: '12px' }}>{strategy.broker}</td>
+              <td style={{ padding: '12px' }}>{strategy.market}</td>
+              <td style={{ padding: '12px', textAlign: 'center' }}>
+                {watchlistCounts[strategy.id] ?? 'N/A'}
+              </td>
+              <td style={{ padding: '12px' }}>{new Date(strategy.created_at).toLocaleString()}</td>
+              <td style={{ padding: '12px' }}>{new Date(strategy.updated_at).toLocaleString()}</td>
+              <td style={{ padding: '12px', textAlign: 'center', display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                <button onClick={() => handleRun1stScan(strategy.id)}>1st Scan</button>
+                <button onClick={() => handleRun2ndScan(strategy.id)}>2nd Scan</button>
+                <button disabled>Edit</button>
+                <button onClick={() => handleDeleteStrategy(strategy.id)} style={{ background: '#ef5350', color: 'white' }}>Delete</button>
               </td>
             </tr>
           ))}

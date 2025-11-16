@@ -3,12 +3,12 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.db.session import get_db
-from app.models.strategy import StrategyCreate, StrategyUpdate, StrategyInDB
+from app.models.strategy import StrategyCreate, StrategyUpdate, StrategySchema
 from app.services import strategy_service
 
 router = APIRouter()
 
-@router.post("/strategies", response_model=StrategyInDB, status_code=201)
+@router.post("/strategies", response_model=StrategySchema, status_code=201)
 def create_strategy_endpoint(
     *,
     db: Session = Depends(get_db),
@@ -20,7 +20,7 @@ def create_strategy_endpoint(
     strategy = strategy_service.create_strategy(db=db, strategy=strategy_in)
     return strategy
 
-@router.get("/strategies", response_model=List[StrategyInDB])
+@router.get("/strategies", response_model=List[StrategySchema])
 def read_strategies_endpoint(
     db: Session = Depends(get_db),
     skip: int = 0,
@@ -32,7 +32,7 @@ def read_strategies_endpoint(
     strategies = strategy_service.get_strategies(db, skip=skip, limit=limit)
     return strategies
 
-@router.get("/strategies/{strategy_id}", response_model=StrategyInDB)
+@router.get("/strategies/{strategy_id}", response_model=StrategySchema)
 def read_strategy_endpoint(
     *,
     db: Session = Depends(get_db),
@@ -46,7 +46,7 @@ def read_strategy_endpoint(
         raise HTTPException(status_code=404, detail="Strategy not found")
     return strategy
 
-@router.put("/strategies/{strategy_id}", response_model=StrategyInDB)
+@router.put("/strategies/{strategy_id}", response_model=StrategySchema)
 def update_strategy_endpoint(
     *,
     db: Session = Depends(get_db),
@@ -62,7 +62,7 @@ def update_strategy_endpoint(
     strategy = strategy_service.update_strategy(db=db, strategy_id=strategy_id, strategy_update=strategy_in)
     return strategy
 
-@router.delete("/strategies/{strategy_id}", response_model=StrategyInDB)
+@router.delete("/strategies/{strategy_id}", response_model=StrategySchema)
 def delete_strategy_endpoint(
     *,
     db: Session = Depends(get_db),

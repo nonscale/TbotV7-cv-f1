@@ -17,6 +17,11 @@ class Strategy(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False, unique=True)
+
+    # PRD 요구사항 반영: '명시적 컨텍스트' 필드 추가
+    broker = Column(String, nullable=False)
+    market = Column(String, nullable=False)
+
     description = Column(String, nullable=True)
     scan_logic = Column(JSON, nullable=False)
     is_active = Column(Boolean, default=False)
@@ -36,6 +41,11 @@ class StrategyBase(BaseModel):
     전략 생성 및 수정을 위한 기본 필드를 정의하는 Pydantic 스키마.
     """
     name: str
+
+    # PRD 요구사항 반영: '명시적 컨텍스트' 필드 추가
+    broker: str
+    market: str
+
     description: Optional[str] = None
     scan_logic: Dict[str, Any]
     is_active: bool = False
@@ -52,6 +62,8 @@ class StrategyUpdate(BaseModel):
     기존 전략을 업데이트할 때 사용하는 스키마. 모든 필드는 선택 사항입니다.
     """
     name: Optional[str] = None
+    broker: Optional[str] = None
+    market: Optional[str] = None
     description: Optional[str] = None
     scan_logic: Optional[Dict[str, Any]] = None
     is_active: Optional[bool] = None

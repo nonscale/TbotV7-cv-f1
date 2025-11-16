@@ -15,6 +15,14 @@ class BaseBroker(ABC):
         pass
 
     @abstractmethod
+    async def get_market_data_for_1st_scan(self, tickers: List[str]) -> pl.DataFrame:
+        """
+        1차 스캔을 위해 여러 종목의 현재 시점 데이터를 한 번에 가져옵니다.
+        'open', 'high', 'low', 'close', 'volume', 'amount' 컬럼을 포함해야 합니다.
+        """
+        pass
+
+    @abstractmethod
     async def get_ohlcv(
         self,
         ticker: str,
