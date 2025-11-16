@@ -11,3 +11,14 @@ export interface ScanResult {
   amount: string;
   ohlc: 'bar_up' | 'bar_down';
 }
+
+export interface Strategy {
+  id: number;
+  name: string;
+  description?: string;
+  scan_logic: any;
+  is_active: boolean;
+  cron_schedule?: string;
+  created_at: string;
+  updated_at?: string;
+}
