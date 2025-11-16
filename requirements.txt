@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+sqlalchemy
+alembic
+# pydantic-sqlalchemy removed for pydantic v2 compatibility
+psycopg2-binary
+pydantic>2.0
+pydantic-settings
+python-dotenv
+polars
+pyupbit
+pytest
+httpx
