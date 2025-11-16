@@ -2,7 +2,6 @@ fastapi
 uvicorn
 sqlalchemy
 alembic
-# pydantic-sqlalchemy removed for pydantic v2 compatibility
 psycopg2-binary
 pydantic>2.0
 pydantic-settings
@@ -11,3 +10,4 @@ polars
 pyupbit
 pytest
 httpx
+websockets
