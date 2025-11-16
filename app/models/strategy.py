@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON
 from sqlalchemy.sql import func
 from app.db.session import Base
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Dict, Any
 import datetime
 
@@ -29,7 +29,7 @@ class Strategy(Base):
 
 
 # ==================================
-# Pydantic Schemas
+# Pydantic Schemas (for Pydantic V2)
 # ==================================
 
 class StrategyBase(BaseModel):
@@ -54,5 +54,5 @@ class StrategyInDB(StrategyBase):
     created_at: datetime.datetime
     updated_at: Optional[datetime.datetime] = None
 
-    class Config:
-        orm_mode = True # SQLAlchemy 모델과 자동으로 매핑
+    # Pydantic V2에서는 orm_mode 대신 from_attributes를 사용
+    model_config = ConfigDict(from_attributes=True)
